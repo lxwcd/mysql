@@ -4351,7 +4351,7 @@ undo log 日志中同样有 roll_pointer 列，除了 insert 操作外，因为 
 > [事务的隔离级别有哪些？](https://xiaolincoding.com/mysql/transaction/mvcc.html#幻读)
 > [第24章 一条记录的多幅面孔-事务的隔离级别与MVCC](https://relph1119.github.io/mysql-learning-notes/#/mysql/24-一条记录的多幅面孔-事务的隔离级别与MVCC)
 
-ReadView 类似快照
+ReadView 类似快照，查询语句只能读到生成 ReadView 之前已经提交的事务所作的更改
 
 - m_ids
 生成 ReadView 时，当前系统中活跃的读写事务的事务 id 列表
@@ -4938,14 +4938,26 @@ prepare 和 commit
 
 
 - 锁是内存中的一个结构
+   - trx 
+   这个锁结构与哪个事务关联
+   - is_waiting
+   表示当前事务是否在等待
 - 当一个事务要对某个记录做修改时，会先在内存中查看有没有与这条记录关联的锁结构，没有则会在内存中生成一个锁结构与之关联
 - 不同存储引擎对锁的支持不同，这里介绍 InnoDB 存储引擎中的锁
 
+对多事务并发操作时，为避免脏读、不可重复读、幻读等，可以采取下列措施：
+- 读操作使用 MVCC，写操作加锁
+写操作针对最新的版本，读只能读 ReadView 生成前提交的版本
+- 读写操作均加锁
+某些场景不允许读旧版本数据，要求读也要最新版本数据
+
 ## 一致性读（Consistent Reads）
 - 事务利用 MCVV 进行的读取操作称为一致性读，或快照读，读取不会加锁
+- 普通的 select 语句在 read commited 和 repeatable read 隔离级别下为一致性读
 
 ## 共享锁和排他锁
 > [15.7.2.4 Locking Reads](https://dev.mysql.com/doc/refman/8.0/en/innodb-locking-reads.html)
+
 
 - shared lock，S 锁，共享锁
 事务要读记录时，需先获取该记录的共享锁
@@ -4959,12 +4971,14 @@ prepare 和 commit
 如果第二个事务又想再获取该记录的 X 锁，则需要等第一个事务释放 S 锁
 
 
+## 锁定读
+在读取记录前就先为该记录加锁的读取方式为锁定读，locking read
 给读记录加 S 锁
 ```sql
 MySQL root@(none):db0> SELECT * FROM v1 FOR SHARE;
 ```
 
-给记录加 X 锁
+给读记录加 X 锁
 ```sql
 MySQL root@(none):db0> SELECT * FROM v1 FOR UPDATE;
 ```
@@ -4979,14 +4993,14 @@ MySQL root@(none):db0> SELECT * FROM v1 FOR UPDATE;
 - 普通的 select 语句为一致性读，即快照读，不加（除了串行化隔离级别）
 - 行级锁发生在事务中，事务提交时锁释放
 
-### 记录锁 Record Locks
+#### 记录锁 Record Locks
 
 
-### 间隙锁 Gap Locks
+#### 间隙锁 Gap Locks
 可以锁定一个范围但不包含记录本身
 存在可重复度隔离级别，为了解决幻读问题，即新加记录造成重复读到数据不一致
 
-### Next-key Locks
+#### Next-key Locks
 可以锁定一个范围且包含记录本身，锁定记录且组织在该记录间隙插入数据
 
 
