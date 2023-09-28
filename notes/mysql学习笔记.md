@@ -2777,7 +2777,7 @@ Time: 0.012s
 没有筛选结果，因此驱动表的每一条记录都筛选出来，筛选出的每一条记录与被驱动表匹配的记录组合，
 被驱动表也没有筛选条件，因此结果为笛卡尔积
 
-## 等值内联接
+### 内联接
 ```sql
 MySQL root@(none):db0> SELECT v.vend_id,v.vend_name,p.prod_name,p.prod_price FROM
                     -> vendors AS v INNER JOIN products AS p
@@ -2799,8 +2799,10 @@ Time: 0.010s
 假设上面驱动表为 v，被驱动表为 p；驱动表的全部记录都被筛选，而每一条驱动表的记录，
 从被驱动表中根据 v.vend_id = p.vend_id 条件筛选，然后组合成一个新表，这里正好一一对应
 
+内联接的 ON 子句和 WHERE 子句作用相同，ON 子句和外联结的 ON 子句效果不同
+内联接对于被驱动表不符合 ON 子句过滤的，驱动表对应的记录不显示在结果集
 
-## 自联接
+### 自联接
 - 自己和自己联接，一个表起两个别名
 
 如有下面需求：
@@ -2835,7 +2837,7 @@ MySQL root@(none):db0> SELECT p1.prod_id, p1.prod_name FROM
 Time: 0.009s
 ```
 
-## 外联接
+### 外联接
 > [第11章 两个表的亲密接触-连接的原理](https://relph1119.github.io/mysql-learning-notes/#/mysql/11-两个表的亲密接触-连接的原理)
 
 左外联接则左侧的表为驱动表
@@ -2847,6 +2849,12 @@ Time: 0.009s
 
 - ON 子句过滤
 被驱动表中无法找到匹配 ON 子句过滤条件的记录，驱动表的记录仍显示在结果集中，该记录对应的被驱动表的字段为 NULL
+
+
+语法：
+```sql
+SELECT * FROM t1 LEFT|RIGHT [OUTER] JOIN t2 ON 联接条件 [WHERE 普通过滤条件]; 
+```
 
 
 初始表：
@@ -2878,7 +2886,7 @@ MySQL root@(none):db0> SELECT * FROM vendors;
 Time: 0.010s
 ```
 
-### LEFT OUTER JOIN 左外联接
+#### LEFT OUTER JOIN 左外联接
 ```sql
 MySQL root@(none):db0> select p.vend_id, p.prod_name from
                     -> products as p left outer join vendors as v
@@ -2896,7 +2904,7 @@ MySQL root@(none):db0> select p.vend_id, p.prod_name from
 Time: 0.009s
 ```
 
-### RIGHT OUTER JOIN 右外联接
+#### RIGHT OUTER JOIN 右外联接
 
 ```sql
 MySQL root@(none):db0> select v.vend_id, v.vend_name from
@@ -2916,10 +2924,10 @@ MySQL root@(none):db0> select v.vend_id, v.vend_name from
 Time: 0.008s
 ```
 
-### FULL OUTER JOIN 完全外联接
+#### FULL OUTER JOIN 完全外联接
 - MySQL 不支持
 
-## UNION 组合查询 
+### UNION 组合查询 
 两张表纵向合并
 只是展示结果，不真的处理数据库的表
 - 默认去重
