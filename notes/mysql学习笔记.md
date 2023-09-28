@@ -7,6 +7,7 @@ MySQL 学习笔记
 > [牛客刷题](https://www.nowcoder.com/exam/intelligent?questionJobId=10&tagId=21014)
 > 查漏补缺：[MySQL 是怎样运行的：从根儿上理解 MySQL](https://github.com/Relph1119/mysql-learning-notes)
 > 梳理知识：[图解MySQL介绍](https://xiaolincoding.com/mysql/)
+> 极客时间学习：[MySQL 实战 45 讲](https://time.geekbang.org/column/intro/100020801?tab=catalog)
 > 进阶书：MySQL 技术内幕 InnoDB 存储引擎 
 
 
@@ -3790,6 +3791,7 @@ MySQL 8.0 后不用此功能
 
 - 语法解析
 分析语法
+也会做 precheck 权限验证
 
 ## 执行 SQL 
 
@@ -3800,13 +3802,16 @@ MySQL 8.0 后不用此功能
 ### 优化
 > [第15章 查询优化的百科全书-Explain详解（上）](https://relph1119.github.io/mysql-learning-notes/#/mysql/15-查询优化的百科全书-Explain详解（上%EF%BC%89)
 
-客户端输入的 SQL 语句是声明式语句，具体怎么执行还会经过优化器优化，
-优化后生成执行计划，提高执行效率，但并非所有的语句都可以优化，
+客户端输入的 SQL 语句是声明式语句，具体怎么执行还会经过优化器优化
+如多个索引时选择哪个索引，或多表有 join 时，选择各表的连接顺序
+
+优化后生成执行计划，提高执行效率，但并非所有的语句都可以优化
 可以用 EXPLAIN 命令查看优化后生成的执行计划
 
 ### 执行
 执行器负责执行生成的执行计划，真正的执行过程要存储引擎参与
 
+执行时会进一步验证权限
 
 # 存储引擎
 > [Chapter 16 Alternative Storage Engines](https://docs.oracle.com/cd/E17952_01/mysql-8.0-en/storage-engines.html)
@@ -3847,6 +3852,8 @@ Time: 0.070s
 - 将表中的数据存储到磁盘上的存储引擎
 - 处理数据的过程发生在内存，需要将磁盘数据加载到内存，写数据后再将内存数据写回磁盘
 - InnoDB 以页作为磁盘和内存之间交互的基本单位，一页的大小一般为 16KB
+- InnoDB 的页有多种类型，存放表中记录的页为索引页
+
 
 ### InnoDB 行格式
 - 以行为单位插入数据，一行也称一条记录，该记录存储在磁盘上的方式叫行格式
@@ -3857,6 +3864,77 @@ Time: 0.070s
    - Compressed
 
 - 可以在创建表时通过 ROW_FORMAT 指定行格式
+
+#### Compact
+> [第5章 盛放记录的大盒子-InnoDB数据页结构](https://relph1119.github.io/mysql-learning-notes/#/mysql/05-盛放记录的大盒子-InnoDB数据页结构)
+
+##### 变长字段长度列表
+- 不一定有，如果存在字段的格式为 VARCHAR 类型，则有，记录变长字段占用的存储空间
+- 逆序存放
+记录头中的 next_record 维持一个单向链表，链表执行每个记录记录头和真实数据交界处，
+从该处向左访问记录头，变长字段等信息，从右访问真实数据
+逆序存放则最右边的第一个变长字段数据对应的字段长度也在靠右边的位置，提高靠前位置记录的缓存命中率
+
+##### NULL 值列表
+- 不一有，如果字段全部定义为 NOT NULL，则无该部分
+- 如果有的字段允许为 NULL，则有该部分，且要以整数个字节的位表示，不足则高位补 0 
+- 每个允许为  NULL 的列对应一个二进制位，该位为 1 表示该列的值为 NULL，0 则不为 NULL
+
+##### 记录头信息
+- deleted_flag
+标记给记录是否被删除，删除则标记为 1
+
+- n_owned 
+一个页的记录被分成若干组，每组中最大的记录（索引号排序）的该字段记录本组中的记录数量
+如果不是本组的最大记录，则该值为 0
+
+- heap_no
+所有的记录在堆中，该值代表本记录在堆中的相对位置
+一页的最小记录 infimum 和 最大记录 supermum 的 heap_no 分别为 0 和 1
+
+- record_type
+当前记录的类型
+0 为普通记录
+1 为 B+ 树非叶子节点目录项记录
+2 为 Infimum 记录
+3 为 Supermum 记录
+
+- next_record 
+当前记录的真实数据到下一条记录真实数据之间的距离
+记录的排序按照主键排序
+按照主键大小从小到大形成一个单向链表
+本条记录的 next_record 指向下一条记录的真实数据开始的地方，即记录头和数据的交界处
+
+
+
+### InnoDB 数据页结构
+> [第5章 盛放记录的大盒子-InnoDB数据页结构](https://relph1119.github.io/mysql-learning-notes/#/mysql/05-盛放记录的大盒子-InnoDB数据页结构)
+
+
+- InnoDB 页有很多类型，存放记录的页为索引页
+
+#### File Header
+页的通用信息，如页的类型，页号，上一页的页号，下一页的页号等
+
+#### Page Header
+该具体类型页的一些状态信息，如页中槽的数量，Free Space 在页中的偏移量等
+
+#### Infimum + Supermum
+两条特殊记录，默认创建就有的两条记录，分别为页面中的最小记录和最大记录
+head_no 值分别为 0 和 1，表示这两条记录在堆中的位置靠最前
+
+#### User Records
+存放正真记录，记录存放按照指定的行格式存储，即 ROW_FORMAT
+初始没有，从 Free Space 空间中申请，申请后有记录则为 User Records
+
+#### Free Space
+未使用的空间，添加记录则从中申请
+
+#### Page Directory
+一个页中记录是按照主键排序形成一个单向链表
+如果记录太多，查找记录时按照链表查太慢，因此将多个记录划分组形式，类似多级目录
+每组最大的记录在页中的偏移量单独提取出来存储在 Page Directory 中
+
 
 ### InnoDB 数据目录
 > [第8章 数据的家-MySQL的数据目录](https://relph1119.github.io/mysql-learning-notes/#/mysql/08-数据的家-MySQL的数据目录)
@@ -4292,14 +4370,14 @@ transaction log
 > [第20章 说过的话就一定要办到-redo日志（上）](https://relph1119.github.io/mysql-learning-notes/#/mysql/20-说过的话就一定要办到-redo日志（上%EF%BC%89)
 > [为什么需要 redo log ？](https://xiaolincoding.com/mysql/log/how_update.html#为什么需要-redo-log)
 
-- 重做日志
+- 重做日志，存储引擎层实现，InnoDB 特有
 - redo log 记录事务完成后的数据状态，记录更新后的值，为了事务的持久性
 - InnoDB 存储引擎生成的日志，主要为了事务的持久性，用于掉电等故障的恢复
 - 服务器启动时向操作系统申请了一大片 redo log buffer，即 redo 日志缓冲区，该空间被分为若干连续的 redo log block
 - InnoDB 存储引擎在修改数据时，将数据的修改记录到 redo log buffer 中，之后再在空闲时将修改的数据刷新到磁盘
 - 一次原子访问的过程可能产生很多条 redo 日志，这些 redo 日志是不可分割的组，在一次原子操作结束后该组 redo 日志才全部复制到 redo log buffer 中，此时仍在内存中
 - redo 日志占用的空间少，采用追加操作，磁盘写入为顺序写，而直接刷新数据到磁盘为随机写，因此相对而言性能更高
-- redo log 通常是物理日志，保证了持久性
+- redo log 是物理日志，记录某个数据页做了什么修改等，保证了持久性
 
 
 #### redo 日志刷新到磁盘的时机
@@ -4468,11 +4546,12 @@ mysql-client-core-8.0: /usr/bin/mysqldumpslow
 > [5.4.4 The Binary Log](https://dev.mysql.com/doc/refman/8.0/en/binary-log.html)
 > [为什么需要-binlog](https://xiaolincoding.com/mysql/log/how_update.html#为什么需要-binlog)
 
-- binary log
+- binary log，server 层实现，所有存储引擎都可以使用
 - 记录数据库的变化，即 DDL 和 DML 语句，但不包括查询语句
 - 二进制日志可以用来恢复数据
 - MySQL 在完成一条更新操作时，server 层会生成 binlog 记录到一个缓存中，等事务提交的时候，全部的 binlog 
   会写道二进制日志文件中
+- binary log 是逻辑日志，记录语句的原始逻辑
 
 ```sql
 MySQL root@(none):db0>  SHOW GLOBAL VARIABLES LIKE 'log_bin%';
