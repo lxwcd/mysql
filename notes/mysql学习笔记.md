@@ -2710,7 +2710,14 @@ MySQL root@(none):db0> SELECT DISTINCT vend_id FROM products;
 Time: 0.005s
 ```
 
-## 多表查询-无联接 (cross join)
+## 多表查询
+> [第11章 两个表的亲密接触-连接的原理](https://relph1119.github.io/mysql-learning-notes/#/mysql/11-两个表的亲密接触-连接的原理)
+
+- 多表查询时，一个为驱动表，另一个为被驱动表
+先查询驱动表，根据过滤过滤条件筛选驱动表的记录
+驱动中每选出一条符合的记录，到被驱动表中根据过滤条件查找匹配的记录
+
+### 交叉联接 (cross join)
 两个表内容：
 ```sql
 MySQL root@(none):db0> select * from products;
@@ -2739,7 +2746,7 @@ MySQL root@(none):db0> select * from vendors;
 Time: 0.010s
 ```
 
-无联接联合查询
+联合查询
 ```sql
 MySQL root@(none):db0> select v.vend_id, v.vend_name,p.prod_name,p.prod_price from
                     -> vendors as v, products as p;
@@ -2767,25 +2774,8 @@ MySQL root@(none):db0> select v.vend_id, v.vend_name,p.prod_name,p.prod_price fr
 Time: 0.012s
 ```
 结果为笛卡尔积，最终的行数是将第一个表中的行数乘以第二个表中的行数，也叫交叉联接（cross join）
-
-对比筛选后结果：
-```sql
-MySQL root@(none):db0> select v.vend_id,  v.vend_name,p.prod_name,p.prod_price from
-                    -> vendors as v, products as p
-                    -> where v.vend_id = p.vend_id;
-+---------+-----------+-----------+------------+
-| vend_id | vend_name | prod_name | prod_price |
-+---------+-----------+-----------+------------+
-| 34      | v34       | a         | 23.00      |
-| 34      | v34       | b         | 45.00      |
-| 2       | v2        | c         | 21.00      |
-| 2       | v2        | d         | 44.00      |
-| 1       | v1        | e         | 22.00      |
-+---------+-----------+-----------+------------+
-
-5 rows in set
-Time: 0.011s
-```
+没有筛选结果，因此驱动表的每一条记录都筛选出来，筛选出的每一条记录与被驱动表匹配的记录组合，
+被驱动表也没有筛选条件，因此结果为笛卡尔积
 
 ## 等值内联接
 ```sql
@@ -2805,6 +2795,10 @@ MySQL root@(none):db0> SELECT v.vend_id,v.vend_name,p.prod_name,p.prod_price FRO
 5 rows in set
 Time: 0.010s
 ```
+
+假设上面驱动表为 v，被驱动表为 p；驱动表的全部记录都被筛选，而每一条驱动表的记录，
+从被驱动表中根据 v.vend_id = p.vend_id 条件筛选，然后组合成一个新表，这里正好一一对应
+
 
 ## 自联接
 - 自己和自己联接，一个表起两个别名
@@ -2844,12 +2838,18 @@ Time: 0.009s
 ## 外联接
 > [第11章 两个表的亲密接触-连接的原理](https://relph1119.github.io/mysql-learning-notes/#/mysql/11-两个表的亲密接触-连接的原理)
 
-外联接只除了连个表交叉的地方外，还包含非交叉的部分
-因此，外联接分为左外联接和右外联接
-左外联接则包含 LEFT OUTER JOIN 的左边的表所有行
-右外联接则包含 RIGHT OUTER JOIN 的右边的表所有行
+左外联接则左侧的表为驱动表
+右外联接则右侧的表为驱动表
+
+过滤条件分为两种：
+- WHERE 子句过滤
+普通的过滤条件，如果被驱动表中无 WHERE 子句过滤条件的记录，则驱动表的记录也不显示在结果集
+
+- ON 子句过滤
+被驱动表中无法找到匹配 ON 子句过滤条件的记录，驱动表的记录仍显示在结果集中，该记录对应的被驱动表的字段为 NULL
 
 
+初始表：
 ```sql
 MySQL root@(none):db0> SELECT * FROM products;
 +---------+---------+-----------+------------+-----------+
