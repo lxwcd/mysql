@@ -4194,7 +4194,7 @@ Time: 0.020s
 - 原子性 Atomicity
 事务的所有操作要么全部完成，要么全部不完成
 一个事务没完成，只执行部分操作，会撤销回滚而非继续操作
-redo log 和 undo log
+undo log
 
 - 一致性 Consistency
 事务的执行结果必须符合预期的
