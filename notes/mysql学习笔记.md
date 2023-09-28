@@ -4182,8 +4182,9 @@ Time: 0.020s
 - 事务是一组 SQL 语句，符合 ACID 特性
 - 并非所有的引擎都支持事务，MyISAM 不支持事务，InnoDB 支持事务
 - 事务（transaction）处理可以用来维护数据库的完整性，保证 MySQL 操作要么完全执行，要么完全不执行
-- 回退（rollback）指撤销指定 SQL 语句的过程
-- 提交（commit）指将未存储的 SQL 语句结果写入数据库表
+- 回退（rollback）指撤销指定 SQL 语句的过程，回滚操作要在提交前
+- 提交（commit）
+事务提交时可以不立即将数据刷新到磁盘（与选择的模式有关），但为保证持久性，需要将 redo log 刷新到磁盘
 - 保留点（savepoint）指事务处理中设置的临时占位符（place-holder），可以对它发布回退
 - 管理事务处理的关键在于将 SQL 语句组分解为逻辑块，并明确规定数据何时应该回退，何时不应该回退
 
@@ -4475,14 +4476,32 @@ transaction log
 > [为什么需要 redo log ？](https://xiaolincoding.com/mysql/log/how_update.html#为什么需要-redo-log)
 
 - 重做日志，存储引擎层实现，InnoDB 特有
-- redo log 记录事务完成后的数据状态，记录更新后的值，为了事务的持久性
 - InnoDB 存储引擎生成的日志，主要为了事务的持久性，用于掉电等故障的恢复
 - 服务器启动时向操作系统申请了一大片 redo log buffer，即 redo 日志缓冲区，该空间被分为若干连续的 redo log block
 - InnoDB 存储引擎在修改数据时，将数据的修改记录到 redo log buffer 中，之后再在空闲时将修改的数据刷新到磁盘
 - 一次原子访问的过程可能产生很多条 redo 日志，这些 redo 日志是不可分割的组，在一次原子操作结束后该组 redo 日志才全部复制到 redo log buffer 中，此时仍在内存中
 - redo 日志占用的空间少，采用追加操作，磁盘写入为顺序写，而直接刷新数据到磁盘为随机写，因此相对而言性能更高
 - redo log 是物理日志，记录某个数据页做了什么修改等，保证了持久性
+- redo log 记录事务完成后的数据状态，记录更新后的值，为了事务的持久性
 
+- redo log 记录修改的内容，如`将第0号表空间第1号页面中偏移量为120处的值更新为1`，因此占用的空间很小
+- 事务执行过程中，每执行一条语句，可能产生若干 redo 日志，这些日志顺序写入磁盘，相比直接刷新数据到磁盘（随机 I/O）更快
+
+#### redo 日志格式
+通用的一些字段有：
+- type 
+日志类型
+- space ID
+表空间号
+- page number
+页号
+- data
+日志内容
+
+#### redo log buffer
+- redo log 也不是写了就立马刷新到磁盘，而是存在一个 redo log buffer 中
+- redo log buffer 时服务器启动时项操作系统申请的连续的内存空间
+- buf_free 全局变量标记下一条 redo log 应写入到 log buffer 的位置
 
 #### redo 日志刷新到磁盘的时机
 - redo log buffer 空间不足，大约用了一半空间时，需要将 redo 日志刷新到磁盘
@@ -4494,6 +4513,12 @@ transaction log
 - checkpoint
 判断 redo 日志占用的磁盘空间是否可以被覆盖，以便被重新使用
 
+#### lsn
+- log sequence number
+- 记录当前总共已写入到 redo log 的日志量，初始为 8704
+
+#### checkpoint
+- 利用全局变量 checkpoint_lsn 表示系统中可以被覆盖的 redo log 总量
 
 #### innodb_flush_log_at_trx_commit 刷新策略
 > [innodb_flush_log_at_trx_commit](https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_flush_log_at_trx_commit)
@@ -4524,7 +4549,6 @@ Time: 0.007s
 ```
 
 对于 MySQL 8.0.34 redo 日志在 `/var/lib/mysql/#innodb_redo` 目录中
-
 
 ### undo log
 > [后悔了怎么办-undo日志（上）](https://relph1119.github.io/mysql-learning-notes/#/mysql/22-后悔了怎么办-undo日志（上%EF%BC%89)
@@ -4830,6 +4854,14 @@ Time: 0.009s
 授予用户权限，备份的主机可以只装 mysql 客户端 （yum install mysql）
 实时同步，可以放后台执行 
 如果主机服务突然停止，重新开启服务后，备份的主机可以继续同步二进制日志
+
+
+## redo log 和 binlog 一致性保证
+> [为什么需要两阶段提交？](https://xiaolincoding.com/mysql/log/how_update.html#为什么需要两阶段提交)
+
+
+- 分两阶段提交
+prepare 和 commit
 
 # 锁
 > [15.7.1 InnoDB Locking](https://dev.mysql.com/doc/refman/8.0/en/innodb-locking.html)
