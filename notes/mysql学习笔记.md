@@ -4567,7 +4567,11 @@ Time: 0.007s
 
 
 - 每发生一次增删改操作，就生成一个事务id
-
+- insert, update 和 delete 操作会产生不同类型的 undo log
+- 同一个 undo 页面中的 undo log 类型要相同，不能混着
+- 一个事务的执行过程可能涉及好几种操作，因此需要几个 undo 页面的链表
+如 insert undo 链表，update undo 链表
+- 不同事务执行过程中产生的 undo log 要写到不同的 undo 页面链表中
 
 
 ## 错误日志
