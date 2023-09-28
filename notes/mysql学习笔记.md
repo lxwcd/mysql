@@ -4323,9 +4323,85 @@ mysql 默认设置
 
 ## MVCC 多版本并发控制
 > [Read View 在 MVCC 里如何工作的？](https://xiaolincoding.com/mysql/transaction/mvcc.html#read-view-在-mvcc-里如何工作的)
+> [第24章 一条记录的多幅面孔-事务的隔离级别与MVCC](https://relph1119.github.io/mysql-learning-notes/#/mysql/24-一条记录的多幅面孔-事务的隔离级别与MVCC)
 
 
 - MVCC 只在 read committed 和 repeatable read 两个隔离级别下工作
+
+### 版本链
+InnoDB 存储引擎的聚簇索引记录的数据列中会加上一些隐藏列：
+- row_id
+不一定有，如果用户未自定义主键，且没有不允许存储 NULL 值的 UNIQUE 键可以作为主键，则默认添加一个 row_id 隐藏列作为主键
+- trx_id
+事务 ID，一定有
+一个事务每次对某条聚簇索引记录进行修改时，会将该事务 id 赋值给 trx_id 隐藏列
+- roll_pointer
+回滚指针，一定存在
+对某条聚簇索引记录进行改动时，会将旧版本写到 Undo log 中，该隐藏列相当于一个指针，通过它找到旧版本数据
+
+
+对于回滚功能来说，事务提交后就没用了，占用的空间会被回收，但 undo log 还可以实现 MVCC
+
+每次改动记录的 undo log 中有 roll_pointer 列，所有版本的 roll_pointer 连接在一起就形成一个链表，即版本链
+但 INSERT 操作对应的 undo log 没有该列，因为 insert 操作没有旧版本
+版本链的头节点为当前记录的最新值
+每个版本中还包含生成该版本的事务 id
+
+利用该版本链可以控制并发事务访问相同记录的行为，即多版本并发控制
+
+
+### ReadView
+> [事务的隔离级别有哪些？](https://xiaolincoding.com/mysql/transaction/mvcc.html#幻读)
+> [第24章 一条记录的多幅面孔-事务的隔离级别与MVCC](https://relph1119.github.io/mysql-learning-notes/#/mysql/24-一条记录的多幅面孔-事务的隔离级别与MVCC)
+
+ReadView 类似快照
+
+- m_ids
+生成 ReadView 时，当前系统中活跃的读写事务的事务 id 列表
+
+- min_trx_id
+生成 ReadView 时，当前系统中活跃的读写事务中最小的事务 id
+
+- max_trx_id
+生成 ReadView 时，系统应该分配给下一个事务的事务 id
+该值不一定是 m_ids 中的最大值+1，有可能 m_ids 的最大值之后的一些事务提交了，则不在活跃列表
+m_ids 中列表为当前系统中活跃的事务 id 列表，对于多个事务并发执行，可能一些 id 大的事务以及提交了
+
+- creator_trx_id
+生成该 ReadView 的事务的事务 id
+如果一个事务未发生修改操作，如仅仅查询，则事务 id 默认为 0
+
+
+有了 ReadView 后，当访问某条记录时，进行下面判断：
+- 如果被访问的版本的 trx_id 与 ReadView 中的 creator_trx_id 相同，则表示当前事务访问的是自己修改的记录，
+  因此该版本可以被当前事务访问
+
+- 如果被访问的版本的 trx_id 小于 ReadView 中的 min_trx_id，则表示生成该版本的事务在当前事务生成 ReadView 前已提交，
+  因此该版本可以被当前事务访问
+
+- 如果被访问的版本的 trx_id 大于等于 ReadView 中的 max_trx_id，则表示生成该版本的事务在当前事务生成 ReadView 后才开启，
+  因此该版本不可以被当前事务访问
+
+- 如果被访问的版本的 trx_id 介于 ReadView 中的 min_trx_id 和 max_trx_id 之间，继续判断 trx_id 是否在 m_ids 中，
+  如果在，则表示创建 ReadView 时生成该版本的事务处于活跃状态，因此该版本不能被访问
+  如果不在，则表示创建 ReadView 时生成该版本的事务已提交，因此该版本可以被访问
+
+如果某个版本的数据对当前事务不可见，则顺着版本链找下一个版本的数据，再进行上述判断，直到找到可以访问的版本
+
+
+MySQL 中 Read committed 和 Repeatable read 隔离级别的一个很大的区别就是生成 ReadView 的时机不同
+- Read committed 
+每次查询开始时都会生成一个 ReadView
+
+- Repeatable read
+只会在启动事务，第一次查询前生成一个 ReadView，之后不会重复生成，直到事务提交
+
+
+
+
+
+
+
 
 
 
