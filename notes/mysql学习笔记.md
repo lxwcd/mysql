@@ -4589,16 +4589,37 @@ transaction log
 日志内容
 
 #### redo log buffer
+- redo log buffer 是在 mysql 内存中
 - redo log 也不是写了就立马刷新到磁盘，而是存在一个 redo log buffer 中
 - redo log buffer 时服务器启动时项操作系统申请的连续的内存空间
 - buf_free 全局变量标记下一条 redo log 应写入到 log buffer 的位置
 
 #### redo 日志刷新到磁盘的时机
+> [23 | MySQL是怎么保证数据不丢的？](https://time.geekbang.org/column/article/76161)
+> [innodb_flush_log_at_trx_commit的用法](https://relph1119.github.io/mysql-learning-notes/#/mysql/21-说过的话就一定要办到-redo日志（下）?id=innodb_flush_log_at_trx_commit的用法)
+
+redo log 页可能有三种存储状态：
+- mysql 内存的 redo log buffer 中
+- write 到文件系统的 page cache 中
+- fsync 持久化到磁盘
+
+变量 [innodb_flush_log_at_trx_commit](https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_flush_log_at_trx_commit) 控制 redo log 写入磁盘的策略
+
+- 0
+事务提交时，不立即刷新 redo 日志到磁盘，日志留在 redo log buffer 中，交给后台线程每秒刷新到磁盘
+可能会丢失数据
+- 1
+默认
+事务提交时日志全部刷新到磁盘，保证 ACID
+- 2
+事务提交时，redo 日志写到操作系统的缓冲区，在由操作系统的缓冲区每秒刷新到磁盘
+
+
+除了事务提交可能会将 redo log 日志刷新到磁盘外，下列情况也会造成日志刷新到磁盘：
+- InnoDB 后台线程定期刷新 redo log buffer 中的日志到磁盘
 - redo log buffer 空间不足，大约用了一半空间时，需要将 redo 日志刷新到磁盘
-- 事务提交时
-事务提交时，先将 redo log 持久化到磁盘，之后如果在将 Buffer Pool 的脏页刷新到磁盘时系统出故障，
-则系统重启时可以根据 redo log 的内容，将数据恢复到最新的状态
-- 后台线程定期刷新 redo log buffer 中的日志到磁盘
+- 并行的事务提交时，可能将这个事务的 redo log buffer 持久化到磁盘
+所有线程公用 redo log buffer
 - 正常关闭服务器
 - checkpoint
 判断 redo 日志占用的磁盘空间是否可以被覆盖，以便被重新使用
@@ -4610,19 +4631,8 @@ transaction log
 #### checkpoint
 - 利用全局变量 checkpoint_lsn 表示系统中可以被覆盖的 redo log 总量
 
+
 #### innodb_flush_log_at_trx_commit 刷新策略
-> [innodb_flush_log_at_trx_commit](https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_flush_log_at_trx_commit)
-> [innodb_flush_log_at_trx_commit的用法](https://relph1119.github.io/mysql-learning-notes/#/mysql/21-说过的话就一定要办到-redo日志（下）?id=innodb_flush_log_at_trx_commit的用法)
-
-- 0
-事务提交时，不立即刷新 redo 日志到磁盘，交给后台线程每秒刷新到磁盘
-可能会丢失数据
-- 1
-默认
-事务提交时日志全部刷新到磁盘，保证 ACID
-- 2
-事务提交时，redo 日志写到操作系统的缓冲区，在由操作系统的缓冲区每秒刷新到磁盘
-
 #### redo 日志所在文件
 > [redo日志文件组](https://relph1119.github.io/mysql-learning-notes/#/mysql/21-说过的话就一定要办到-redo日志（下）?id=redo日志文件组)
 
@@ -4792,22 +4802,7 @@ MySQL root@(none):db0>  SHOW GLOBAL VARIABLES LIKE 'log_bin%';
 Time: 0.011s
 ```
 
-### binary log 和 redo log 的区别
-> [为什么需要-binlog](https://xiaolincoding.com/mysql/log/how_update.html#为什么需要-binlog)
-
-- 适用对象不同
-binary log 是 server 层的实现，所有存储引擎均适用；redo log 是 InnoDB 存储引擎实现的
-
-- 写入方式不同
-redo log 写入方式是循环写，空间有限，写满则头开始，临时保存未被刷新到磁盘的脏数据
-binary log 写入为追加写，写满后就创建新文件继续写
-
-- 用途不同
-redo log 主要用于掉电等故障后恢复数据，其写入方式是循环写，空间有限，写满则头开始，临时保存未被刷新到磁盘的脏数据
-binary log 主要用于备份恢复，主从复制，其写入为追加写，写满后就创建新文件继续写，保存的是全量日志，可以用于恢复数据
-
-- 文件格式不同 
-redo log 是物理日志，记录某个数据页做的修改
+### binlog 文件格式
 binary log 有三种文件格式
    - Statement
    基于语句的记录模式，日志记录原生执行的 SQL 语句，函数或变量不会替换，因此如函数 now() 可能执行结果不同
@@ -4830,6 +4825,24 @@ MySQL root@(none):db0>  SHOW GLOBAL VARIABLES LIKE 'binlog_format';
 1 row in set
 Time: 0.008s
 ```
+
+### binary log 和 redo log 的区别
+> [为什么需要-binlog](https://xiaolincoding.com/mysql/log/how_update.html#为什么需要-binlog)
+
+- 适用对象不同
+binary log 是 server 层的实现，所有存储引擎均适用；redo log 是 InnoDB 存储引擎实现的
+
+- 写入方式不同
+redo log 写入方式是循环写，空间有限，写满则头开始，临时保存未被刷新到磁盘的脏数据
+binary log 写入为追加写，写满后就创建新文件继续写
+
+- 用途不同
+redo log 主要用于掉电等故障后恢复数据，其写入方式是循环写，空间有限，写满则头开始，临时保存未被刷新到磁盘的脏数据
+binary log 主要用于备份恢复，主从复制，其写入为追加写，写满后就创建新文件继续写，保存的是全量日志，可以用于恢复数据
+
+- 文件格式不同 
+redo log 是物理日志，记录某个数据页做的修改
+binary log 是逻辑日志，记录语句的原始逻辑
 
 - binlog cache 是每个线程自己维护，redo log buffer 是全局共享
 一个事务的 binlog cache 必须连续写
