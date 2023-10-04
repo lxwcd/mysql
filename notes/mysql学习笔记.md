@@ -4774,6 +4774,8 @@ mysql-client-core-8.0: /usr/bin/mysqldumpslow
 - MySQL 在完成一条更新操作时，server 层会生成 binlog 记录到一个缓存中，等事务提交的时候，全部的 binlog 
   会写道二进制日志文件中
 - binary log 是逻辑日志，记录语句的原始逻辑
+- binlog cache 是每个线程自己维护，一个事务的 binlog cache 必须连续写
+- 一个事务的 binlog 不能被拆开，要保证一次写入
 
 ```sql
 MySQL root@(none):db0>  SHOW GLOBAL VARIABLES LIKE 'log_bin%';
@@ -4829,6 +4831,31 @@ MySQL root@(none):db0>  SHOW GLOBAL VARIABLES LIKE 'binlog_format';
 Time: 0.008s
 ```
 
+- binlog cache 是每个线程自己维护，redo log buffer 是全局共享
+一个事务的 binlog cache 必须连续写
+
+### binlog 写入机制
+> [23 | MySQL是怎么保证数据不丢的？](https://time.geekbang.org/column/article/76161)
+
+事务执行时，先将日志写到 binlog cache 中，事务提交时，再将 binlog cache 写到 binlog 文件中
+一个事务的 binlog 不能被拆开，要保证一次写入
+参数 binlog_cache_size 用于控制单个线程内的 binlog cache 所占的内存大小，超过该值则暂存磁盘
+
+binlog cache 写到磁盘可能经历两个过程：
+- write
+将 binlog cache 写到文件系统的 page cache，中，由 mysql 的缓存写到操作系统的缓存，仍在内存中
+- fysnc
+将数据持久化到磁盘
+
+[sync_binlog](https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_sync_binlog) 参数控制 write 和 fsync 的时机：
+
+- 0
+每次提交事务， 只 write 不 fsync，随后由操作系统定期将缓存中的日志写到磁盘
+- 1
+每次提交事务时都要 fsync
+
+- N (N > 1)
+每次提交事务先 write，累积了 N 个事务后再 fsync
 ### 查看当前二进制日志文件
 ```sql
 MySQL root@(none):db0> SHOW BINARY LOGS;
