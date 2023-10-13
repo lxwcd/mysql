@@ -4044,18 +4044,21 @@ Time: 0.045s
 - 只要用到某个缓冲页，就将该页移到 LRU 链表的头部，淘汰时从尾部开始淘汰
 - 预读和全表扫描可能造成缓存页的命中率降低，因此将 LRU 链表划分为 young 区（热数据）和 old 区域（冷数据）
 
-[预读](https://dev.mysql.com/doc/refman/8.0/en/glossary.html#glos_read_ahead)：
+1. [预读](https://dev.mysql.com/doc/refman/8.0/en/glossary.html#glos_read_ahead)
 - read ahead
 - InnoDB 认为执行当前的请求时，可能会在后面读取到某些页面，因此预先将这些页加载到 buffer pool 中
 - 根据触发方式不同，分为线性预读和随机预读
 线性预读：如果顺序访问的某个区的页面超过系统变量 [innodb_read_ahead_threshold](https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_read_ahead_threshold) 的值，则触发异步读取下一个区中全部的页到 buffer pool 中
+
 随机预读：如果某个区的 13 个连续页面都被加载到 buffer pool 中，无论这些页面是否顺序读取的，都会触发一次异步读取本区中所有其他页面到 buffer pool 中，该行为由系统变量 [innodb_random_read_ahead](https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_random_read_ahead) 控制
+
+预读的影响：
 - 如果预读的页用不到，又被移到 LRU 链表的头部，则会降低 buffer pool 的命中率
 
-全表扫描的影响：
+2. 全表扫描的影响
 全表扫描则会访问该表的聚簇索引的所有叶子节点对应的页，则可能会将 buffer pool 中大量的页淘汰，而新加入的页后续不一定会访问；如果页很多，则可能会将 buffer pool 中的页淘汰了又重新加入；该操作可能会降低 buffer pool 的命中率
 
-LRU 链表优化：
+3. LRU 链表优化
 - 针对预读
 当某个页面初次加载到 buffer pool 中时，不直接移到 young 区的头部，而是在 old 区的头部
 如果预读的页后续不使用，则会逐步淘汰
@@ -4064,8 +4067,12 @@ LRU 链表优化：
 - 针对全表扫描
 全表扫描时可能会短时间访问一些频率非常低的页，而每读取一条记录就算访问一次页，读取一条记录和下一条记录之前的间隔很短，因此会在极短时间内频繁访问某个页，根据该特点在对 old 区缓冲页第一次访问时，记录访问时间，后续访问时，比较距离上次访问的时间，如果时间在某个间隔内，即比较短时间访问，则不将其移到 yong 区的头部，只有超过该时间，才将其移到 young 区头部，该时间间隔由系统变量[innodb_old_blocks_time](https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_old_blocks_time) 决定，默认值为 1000ms
 
+4. 进一步优化 LRU 链表
+每次访问一个页，则将其移到 young 区头部会造成 LRU 链表移动操作太频繁
+
 - 针对 yong 区链表频繁操作
 只有被访问的缓冲页位于 yong 区 1/4 之外，才将其移到链表头部
+
 ### 刷新脏数据到磁盘
 - 后台有专门隔一段时间将脏页刷新到磁盘的线程，不影响用户的正常请求
 - 刷新途径有两种
