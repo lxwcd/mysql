@@ -109,9 +109,13 @@ MySQL 学习笔记
 
 
 # 唯一键（Unique Key）
+> [13.1.15 CREATE INDEX Statement](https://dev.mysql.com/doc/refman/8.0/en/create-index.html#create-index-unique)
+
 - 一个表中可以有多个唯一键
-- 唯一键的字段可以为 NULL
-- 唯一确定一个记录
+- 唯一键的字段可以为 NULL，且允许多个列值为 NULL
+- 唯一确定一个记录，非空记录唯一
+
+![](img/2023-10-14-11-16-37.png)
 
 
 # 外键（foreign key）
@@ -3928,6 +3932,8 @@ Time: 0.070s
 包含页的校验和（checksum），理解类似对页的数据用摘要算法做哈希运算，得到指纹信息，验证数据是否完整
 页尾部有相同的校验和，两者相同则页完整
 
+磁盘上的页不一定相邻，页与页直接通过上一页和下一页的编号而建立的链表关系
+
 #### Page Header
 该具体类型页的一些状态信息，如页中槽的数量，Free Space 在页中的偏移量等
 
@@ -3952,6 +3958,9 @@ head_no 值分别为 0 和 1，表示这两条记录在堆中的位置靠最前
 文件尾部，主要为了鉴别该页是否完整，防止页内容刷新到磁盘时，执行一半出故障
 和 File Header 的校验和一致，当刷新页到磁盘时，页头部先刷新到磁盘，如果页刷新到一半，则尾部的校验和
 和头部的校验和不一致，从而判断数据为刷新成功
+
+前四个字节为页的校验和
+后四个字节为页最后被修改时对应的 LSN 的后四字节，正常情况与 File Header 部分的 FIL_PAGE_LSN 的后四字节相同，也是为了校验页的完整性
 
 ### InnoDB 数据目录
 > [第8章 数据的家-MySQL的数据目录](https://relph1119.github.io/mysql-learning-notes/#/mysql/08-数据的家-MySQL的数据目录)
@@ -4089,24 +4098,108 @@ Time: 0.045s
 > [第6章 快速查询的秘籍-B+树索引](https://relph1119.github.io/mysql-learning-notes/#/mysql/06-快速查询的秘籍-B+树索引)
 > [什么是索引？](https://xiaolincoding.com/mysql/index/index_interview.html#什么是索引)
 
+
+没有索引查询方式：
+1. 在单个页中查找记录：
+- 以主键为搜索条件
+可以根据页目录先定位到对应的槽，然后遍历该槽对应分组的记录
+- 以其他列为搜索条件
+因为页中按照主键排序，以其他列搜索，只能从 Infimum 记录开始遍历单向链表中的每条记录，然后看是否符合
+2. 在多页中查找
+- 定位到记录所在的页
+只能从第一页开始沿着双向链表遍历
+- 从所在的页中查找相应记录
+和单页中查找记录的方式相同
+
+
+因此引入索引，为了快速查找记录
 - 索引是帮助存储引擎快速查找数据的一种数据结构，类似数据的目录
 - InnoDB存储引擎会自动为主键（如果没有它会自动帮我们添加）建立聚簇索引，聚簇索引的叶子节点包含完整的用户记录
 - 可以为其他列创建创建索引，为二级索引，一个索引对应一个 B+ 树
 其他列创建的索引的叶子节点不包含完整记录，需要回表，再通过主键查找原始的聚簇索引
 
-## 聚簇索引
+## 索引分类
+> [索引的分类](https://www.xiaolincoding.com/mysql/index/index_interview.html#索引的分类)
+
+### 数据结构划分
+- B+ 树索引
+- Hash 索引
+- Full-text 索引
+
+### 物理存储分类
+#### 聚簇索引
+聚簇索引（Clustered Index）是一种特殊类型的索引，它决定了数据在磁盘上的物理存储顺序。
+在聚簇索引中，索引的叶子节点包含了数据行的实际内容，因此聚簇索引可以看作是表中数据行的排序。
+
+实际物理存储每个页中的记录也是按照主键从小到大排序形成的单向链表
+因此当使用聚簇索引时，数据行的物理存储顺序与聚簇索引的顺序一致。
+这意味着聚簇索引包含了表中的所有记录，因为它们直接存储在聚簇索引的叶子节点中。
+
 - 利用记录主键值的大小进行记录和页的排序
 - 叶子节点存放的是完整的记录
 
-## 二级索引
+#### 二级索引
 - 记录和页的排序按照指定的列
 - 叶子节点存放的不是完整的记录，是指定的列和主键的记录
 如果还需要其他列的记录，则需要根据查到的主键回表，即重新按照主键搜索
 - 二级索引列不要求列值唯一，如果有相同的多列，每查询到一个记录，则立即回表，而不是将全部的二级索引记录找到再回表
 
-## 联合索引
+#### 联合索引
 - 同二级索引，只是指定多列联合排序，默认按照指定的第一个列排序，当第一个列相同，才按第二个列排序
 - 叶子节点记录联合指定的多列索引列和主键列
+
+### 字段特性分类
+
+#### 主键索引
+- 建立在主键字段的索引
+- 一个表只能由一个主键索引
+- 索引列值不能为空
+
+#### 唯一索引
+- 建立在 UNIQUE 字段的索引
+- 一个表可以有多个唯一键索引，非空值必须唯一
+- 允许多个列为 NULL 
+- 插入数据需要判断该数据的唯一索引列是否已存在，因此如果数据页不在内存中，需要将数据读到内存中进行判断
+
+#### 普通索引
+> [MySQL 实战 45 讲](https://time.geekbang.org/column/article/70848)
+
+无需检查唯一性，更新数据时如果数据所在的页不在内存中，可以先将数据写到 change buffer 中，减少磁盘操作
+当后续需要访问数据页的数据时，会进行 merge，将 change buffer 中的操作应用到原数据页
+系统后台也有线程会定期 merge
+
+change buffer 更适合写少读多的场景，如账单、日志类系统
+如果是更新数据后立马就会访问的场景，则用 change buffer 反而性能低，因为访问时会触发 merge，不会减少磁盘 I/O，
+还会增加 change buffer 的维护
+
+**********
+> [Change Buffer](https://dev.mysql.com/doc/refman/8.0/en/innodb-change-buffer.html)
+
+The change buffer is a special data structure that caches changes to **secondary index** pages when those pages are not in the buffer pool. 
+
+The buffered changes, which may result from INSERT, UPDATE, or DELETE operations (DML), are merged later when the pages are loaded into the buffer pool by other read operations.
+
+MySQL的Change Buffer（变更缓冲区）是一种用于优化InnoDB存储引擎的数据修改操作的机制。
+它用于处理对于**非唯一索引的插入、更新和删除操作**。
+
+当执行数据修改操作时，MySQL会首先将修改操作记录到Change Buffer中，而不是直接对磁盘上的数据页进行修改。
+Change Buffer是一个内存中的缓冲区，位于 buffer pool 中，它暂时保存了待修改的数据。
+
+Change Buffer的主要目的是减少磁盘I/O的开销。通过将修改操作缓冲在内存中，可以避免对磁盘上的数据页进行频繁的读取和写入操作。相反，MySQL会在后台的合适时机将Change Buffer中的修改操作应用到实际的数据页上，这个过程称为Change Buffer Merge（变更缓冲区合并）。
+
+
+change buffer 和普通缓存区别？
+
+#### 前缀索引
+> [MySQL 实战 45 讲](https://time.geekbang.org/column/article/71492)
+
+索值只使用列值的一部分，可以减小索引大小，但使用前缀索引就不能使用覆盖索引
+有些情况可能会增加扫描次数，需要选择合适的长度，可以用 [count(distinct)](https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html#function_count-distinct) 验证选择的长度是否合适
+
+### 字段个数分类
+#### 单列索引
+
+#### 联合索引
 
 ## 创建索引
 > [第6章 快速查询的秘籍-B+树索引](https://relph1119.github.io/mysql-learning-notes/#/mysql/06-快速查询的秘籍-B+树索引)
@@ -4131,29 +4224,8 @@ Time: 0.044s
 - 注意不要重复创建索引
 
 
-## 普通索引和唯一索引
-> [MySQL 实战 45 讲](https://time.geekbang.org/column/article/70848)
-
-- 唯一索引，插入数据需要判断该数据的唯一索引列是否已存在，因此如果数据页不在内存中，需要将数据读到内存中进行判断
-- 普通索引，无需检查唯一性，更新数据时如果数据所在的页不在内存中，可以先将数据写到 change buffer 中，减少磁盘操作
-当后续需要访问数据页的数据时，会进行 merge，将 change buffer 中的操作应用到原数据页
-系统后台也有线程会定期 merge
-
-
-change buffer 更适合写少读多的场景，如账单、日志类系统
-如果是更新数据后立马就会访问的场景，则用 change buffer 反而性能低，因为访问时会触发 merge，不会减少磁盘 I/O，
-还会增加 change buffer 的维护
-
-
 ## 覆盖索引
 查询的字段都包含中索引中，直接使用二级索引查询，不用回表
-
-## 前缀索引
-> [MySQL 实战 45 讲](https://time.geekbang.org/column/article/71492)
-
-索值只使用列值的一部分，可以减小索引大小，但使用前缀索引就不能使用覆盖索引
-有些情况可能会增加扫描次数，需要选择合适的长度，可以用 [count(distinct)](https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html#function_count-distinct) 验证选择的长度是否合适
-
 
 
 # 单表的访问方法
