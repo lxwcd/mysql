@@ -1706,68 +1706,6 @@ MySQL root@(none):db0> CREATE TABLE IF NOT EXISTS orderitems (
                     -> )ENGINE=InnoDB;
 ```
 
-
-## 查看表
-
-### 查看数据库中的全部表
-```sql
-MySQL root@(none):db0> SHOW TABLES;
-+---------------+
-| Tables_in_db0 |
-+---------------+
-| customers     |
-| orderitems    |
-+---------------+
-2 rows in set
-Time: 0.012s
-```
-
-### 查看某个具体表结构
-```sql
-MySQL root@(none):db0> DESCRIBE orderitems;
-+------------+--------------+------+-----+---------+-------+
-| Field      | Type         | Null | Key | Default | Extra |
-+------------+--------------+------+-----+---------+-------+
-| order_num  | int          | NO   | PRI | <null>  |       |
-| order_item | int          | NO   | PRI | <null>  |       |
-| prod_id    | char(10)     | NO   |     | <null>  |       |
-| quantity   | int          | NO   |     | <null>  |       |
-| item_price | decimal(8,2) | NO   |     | <null>  |       |
-+------------+--------------+------+-----+---------+-------+
-
-5 rows in set
-Time: 0.013s
-```
-
-### 查看表中的数据
-查看全部数据
-```sql
-MySQL root@(none):db0> SELECT cust_id, cust_name FROM customers;
-+---------+-----------+
-| cust_id | cust_name |
-+---------+-----------+
-| 1       | ben       |
-| 2       | Lily      |
-| 3       | Martian   |
-+---------+-----------+
-3 rows in set
-Time: 0.009s
-MySQL root@(none):db0> SELECT cust_id, cust_name FROM customers WHERE cust_id < 2;
-+---------+-----------+
-| cust_id | cust_name |
-+---------+-----------+
-| 1       | ben       |
-+---------+-----------+
-1 row in set
-Time: 0.007s
-```
-
-
-- 通过其他表创建新表
-create table  as select 复制表结构和内容，但有些没复制，如主键等
-
-create table like  复制表结构
-
 ### 利用其他表创建表
 已有表：
 ```sql
@@ -1849,27 +1787,68 @@ Time: 0.013s
 ```
 - 复制的表结构和原表相同，包括主键等选项
 
-### 查看创建表的语句
-```sql
-MySQL root@(none):db0> SHOW CREATE TABLE test2\G;
-***************************[ 1. row ]***************************
-Table        | test2
-Create Table | CREATE TABLE `test2` (
-  `cust_id` int NOT NULL AUTO_INCREMENT,
-  `cust_name` char(50) NOT NULL,
-  `cust_address` char(50) DEFAULT NULL,
-  `cust_city` char(50) DEFAULT NULL,
-  `cust_stat` char(5) DEFAULT NULL,
-  `cust_zip` char(10) DEFAULT NULL,
-  `cust_country` char(50) DEFAULT NULL,
-  `cust_contact` char(50) DEFAULT NULL,
-  `cust_email` char(255) DEFAULT NULL,
-  PRIMARY KEY (`cust_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 
-1 row in set
-Time: 0.001s
+## 查看表
+
+### 查看数据库中的全部表
+```sql
+MySQL root@(none):db0> SHOW TABLES;
++---------------+
+| Tables_in_db0 |
++---------------+
+| customers     |
+| orderitems    |
++---------------+
+2 rows in set
+Time: 0.012s
 ```
+
+### 查看某个具体表结构
+```sql
+MySQL root@(none):db0> DESCRIBE orderitems;
++------------+--------------+------+-----+---------+-------+
+| Field      | Type         | Null | Key | Default | Extra |
++------------+--------------+------+-----+---------+-------+
+| order_num  | int          | NO   | PRI | <null>  |       |
+| order_item | int          | NO   | PRI | <null>  |       |
+| prod_id    | char(10)     | NO   |     | <null>  |       |
+| quantity   | int          | NO   |     | <null>  |       |
+| item_price | decimal(8,2) | NO   |     | <null>  |       |
++------------+--------------+------+-----+---------+-------+
+
+5 rows in set
+Time: 0.013s
+```
+
+### 查看表中的数据
+查看全部数据
+```sql
+MySQL root@(none):db0> SELECT cust_id, cust_name FROM customers;
++---------+-----------+
+| cust_id | cust_name |
++---------+-----------+
+| 1       | ben       |
+| 2       | Lily      |
+| 3       | Martian   |
++---------+-----------+
+3 rows in set
+Time: 0.009s
+MySQL root@(none):db0> SELECT cust_id, cust_name FROM customers WHERE cust_id < 2;
++---------+-----------+
+| cust_id | cust_name |
++---------+-----------+
+| 1       | ben       |
++---------+-----------+
+1 row in set
+Time: 0.007s
+```
+
+
+- 通过其他表创建新表
+create table  as select 复制表结构和内容，但有些没复制，如主键等
+
+create table like  复制表结构
+
 
 ### 查看表状态
 ```sql
@@ -1904,7 +1883,27 @@ Time: 0.004s
 MySQL root@(none):db0> SHOW TABLE STATUS FROM db0\G;
 ```
 
+### 查看创建表的语句
+```sql
+MySQL root@(none):db0> SHOW CREATE TABLE test2\G;
+***************************[ 1. row ]***************************
+Table        | test2
+Create Table | CREATE TABLE `test2` (
+  `cust_id` int NOT NULL AUTO_INCREMENT,
+  `cust_name` char(50) NOT NULL,
+  `cust_address` char(50) DEFAULT NULL,
+  `cust_city` char(50) DEFAULT NULL,
+  `cust_stat` char(5) DEFAULT NULL,
+  `cust_zip` char(10) DEFAULT NULL,
+  `cust_country` char(50) DEFAULT NULL,
+  `cust_contact` char(50) DEFAULT NULL,
+  `cust_email` char(255) DEFAULT NULL,
+  PRIMARY KEY (`cust_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 
+1 row in set
+Time: 0.001s
+```
 
 ## 更新表
 > [13.1.9 ALTER TABLE Statement](https://dev.mysql.com/doc/refman/8.0/en/alter-table.html)
